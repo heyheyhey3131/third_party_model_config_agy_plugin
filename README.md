@@ -97,7 +97,7 @@ third-party-model-patch/
 │   ├── rebuild-assets.mjs       # 维护：从 clean/patched asar 重新生成 assets
 │   ├── test-forwarder.mjs       # 自检：forwarder 语法 + 真实 require 链路
 │   ├── test-thinking.mjs        # 自检：思考能力识别 + 档位映射 + reasoning_effort
-│   ├── add-effort-variants.mjs  # 为自定义推理模型生成 low/medium/high 变体（供滑条读档位）
+│   ├── add-effort-variants.mjs  # 按模型原生档位生成变体（DeepSeek low/high/max 等）
 │   ├── activate-patch.ps1
 │   └── activate-patch.bat
 ├── skills/model-patch-manager/SKILL.md
@@ -118,37 +118,54 @@ DeepSeek V4/Flash 与 StepFun Step 5 / 3.7 / 3.5 / router 都是推理模型，�
 「不支持思考」，于是原生界面不显示思考档位选择器。现在：
 
 - `proxy/modelUtils.js` 把这些家族识别为思考模型，目录向原生 IDE 声明
-  `supportsThinking: true`，思考档位选择器随之出现（也可用模型配置里的
-  `supportsThinking` 显式覆盖）。
-- `proxy/requestOptions.js` 的 `readNativeRequestEffort` 读取本回合
-  `generationConfig.thinkingConfig`（`thinkingLevel` 或 `thinkingBudget`），
-  统一折叠为 **low / medium / high**——这是 DeepSeek 与 StepFun 的 OpenAI
-  端点都接受的 `reasoning_effort` 取值，避免发出被拒的档位。
-- `proxy/customRequest.js` 用该档位覆盖本回合的 `reasoningEffort`（仅对支持
-  思考的非 Google 模型生效）；没有显式档位时仍沿用模型保存的 `reasoningEffort`。
+  `supportsThinking: true`（也可用模型配置里的 `supportsThinking` 显式覆盖）。
+- **档位按模型原生划分**：DeepSeek 用 `low / high / max`（官方
+  `reasoning_effort`），StepFun 用 `low / medium / high`。不同模型的选择器
+  只有自己支持的档位。
+- `proxy/requestOptions.js` 把档位翻译成请求参数：DeepSeek 额外发送
+  `thinking: {type: enabled}` 并在思考模式下移除 `temperature` /
+  `presence_penalty` / `frequency_penalty`；`none`（思考关闭）翻译为
+  `thinking: {type: disabled}` 而不是非法的 `reasoning_effort`；`default`
+  则不发送任何思考参数。
+- `proxy/requestOptions.js` 的 `readNativeRequestEffort` 仍会读取本回合
+  `generationConfig.thinkingConfig`，但它只用于**没有档位变体**的模型；
+  档位变体自身的 `reasoningEffort` 优先，避免原生残留档位覆盖用户选择。
+- 目录只广告**档位变体**、隐藏被复制的源条目（`proxy.js`）。原生选择器把
+  无档位后缀的条目当作独立一行，源条目会和变体组重复；隐藏后每个模型只剩
+  一行 + 档位子菜单。
 
 调试：设 `AG_PATCH_TRACE=1` 启动 Antigravity，会在插件目录 `.trace.log` 记录
-每回合收到的 `thinkingConfig` 与解析出的档位，用于确认原生 IDE 是否下发档位。
+每回合收到的 `thinkingConfig`、解析出的档位，以及最终发给上游的
+`reasoning_effort` / `thinking`。
 
-### 让 Codex 风格滑条显示档位（effort 变体）
+### 档位变体（effort variants）与 Codex 滑条
 
-`antigravity-codex-effort-slider` 滑条通过解析原生模型选择器里
-「模型名 (low/medium/high)」这类标签来呈现档位。**裸的 DeepSeek/StepFun 条目
-没有档位标签，滑条会置灰锁定**；必须先生成 effort 变体（low/medium/high 副本，
-各自带固定 `reasoningEffort`）。两种方式：
+Antigravity 原生选择器只识别 `low / medium / high / xhigh / max` 这五个档位
+标记（`Name (effort)`），并按模型名分组。裸的 DeepSeek/StepFun 条目没有档位
+标记，既会与变体重复显示，也会让滑条置灰锁定。因此必须生成档位变体：
 
-- 设置页「自定义模型」编辑器里的 **Effort variants** 按钮（应用内置）；或
-- 关闭 Antigravity 后运行本插件脚本（等效、可批量、幂等）：
+- 关闭 Antigravity 后运行本插件脚本（等效于设置页的 **Effort variants**
+  按钮，但按模型使用正确档位、可批量、幂等）：
 
 ```bat
-node scripts\add-effort-variants.mjs            :: 为所有支持思考且尚无变体的模型生成
+node scripts\add-effort-variants.mjs            :: 校正所有支持思考的模型
 node scripts\add-effort-variants.mjs deepseek-flash step-5-preview
 node scripts\add-effort-variants.mjs --dry-run
+node scripts\add-effort-variants.mjs --reset    :: 同时清理孤立的旧变体
 ```
 
-生成后重启 Antigravity（或对运行中窗口用滑条插件的 `inject-cdp.cjs` 热注入），
-滑条即解锁并出现 low/medium/high 三档。脚本逐字复制源模型（含机器绑定的
-`enc:` apiKey），与应用内按钮行为一致，并先备份 `custom_models.json`。
+- 脚本会按模型写入原生档位：DeepSeek 生成 `low/high/max`，StepFun 生成
+  `low/medium/high`，其他 provider 默认 `low/medium/high`；并删除不匹配的旧
+  变体（例如 DeepSeek 之前的 `medium` 副本）。
+- 生成后重启 Antigravity。模型列表里每个模型只出现一次，右侧档位子菜单就是
+  该模型的原生档位；Codex 滑条的分档点也从同一组变体读取，因此不同模型的
+  滑条档位数/名称会随模型变化。
+- 滑条对运行中的窗口可用滑条插件的 `inject-cdp.cjs` 热注入。
+
+> 原生 UI 只支持上面五个档位标记，所以 DeepSeek 的 `none`（完全关闭思考）和
+> `default`（不指定档位）不能作为原生档位显示。需要关闭思考时可把该模型条目
+> 的 Reasoning effort 直接设为 `none`（设置页下拉框支持），代理会翻译成
+> `thinking: {type: disabled}`。
 
 ## 验证记录（2026-11-18，2.32.2）
 
@@ -160,7 +177,8 @@ node scripts\add-effort-variants.mjs --dry-run
 - 应用后代理在 `127.0.0.1:50999` 监听，3 个自定义模型（DeepSeek-V4.1-Flash /
   DeepSeek-V4-Pro / Step 5 Preview）在设置中可见。
 - `test-thinking.mjs`：DeepSeek/StepFun 推理模型被识别为思考模型；原生档位
-  正确折叠为 low/medium/high；OpenAI 格式下发 `reasoning_effort`。
+  映射正确；OpenAI 格式按模型下发 `reasoning_effort`（DeepSeek 额外处理
+  `thinking` 开关与采样参数）；模型列表对每个模型只显示一行档位组。
 
 ## 许可与署名
 

@@ -113,7 +113,7 @@ function applyCompactionEffort(result, model, format, effort) {
         else
             delete result.output_config;
     }
-    const budget = { none: 0, minimal: 1024, low: 1024, medium: 4096, high: 8192, xhigh: 16384 }[effort];
+    const budget = { none: 0, minimal: 1024, low: 1024, medium: 4096, high: 8192, xhigh: 16384, max: 32768 }[effort];
     if (format === 'openai') {
         // OpenRouter's unified reasoning object also covers non-OpenAI models.
         const openRouter = model.provider === 'openrouter' || /^https:\/\/openrouter\.ai(?:\/|$)/i.test(model.apiUrl);
@@ -246,6 +246,43 @@ function trimContext(body, contextWindow, maxOutputTokens = 0) {
         throw new Error('The latest turn, system instructions and tools exceed the configured contextWindow.');
     return result;
 }
+function isDeepSeekModel(model) {
+    return model.provider === 'deepseek' ||
+        /deepseek/i.test(model.externalModelName || '') ||
+        /deepseek/i.test(model.name || '');
+}
+/**
+ * Translate the saved reasoning level into an OpenAI-compatible request.
+ *
+ * DeepSeek's thinking mode takes `reasoning_effort` low/high/max plus
+ * `thinking: {type: enabled|disabled}` (the OpenAI SDK puts the latter in
+ * extra_body, i.e. the request body itself). `none` therefore disables
+ * thinking instead of sending an unsupported reasoning_effort, while an empty
+ * or "default" level leaves the provider default untouched.
+ */
+function applyOpenAIEffort(result, model) {
+    const effort = model.reasoningEffort;
+    if (effort === undefined || effort === '' || effort === 'default' || effort === 'auto') {
+        delete result.reasoning_effort;
+        return;
+    }
+    if (effort === 'none' || effort === 'off') {
+        delete result.reasoning_effort;
+        if (isDeepSeekModel(model))
+            result.thinking = { type: 'disabled' };
+        return;
+    }
+    result.reasoning_effort = effort;
+    if (isDeepSeekModel(model)) {
+        // Official DeepSeek examples always pair an effort with this toggle.
+        if (result.thinking === undefined)
+            result.thinking = { type: 'enabled' };
+        // Thinking mode does not support sampling controls.
+        delete result.temperature;
+        delete result.presence_penalty;
+        delete result.frequency_penalty;
+    }
+}
 function applyRequestOptions(payload, model, format, stream, compactionEffort) {
     const result = { ...payload };
     const reserved = new Set(['model', 'messages', 'contents', 'system', 'systemInstruction', 'tools', 'stream']);
@@ -272,7 +309,7 @@ function applyRequestOptions(payload, model, format, stream, compactionEffort) {
                 result.max_tokens = model.maxOutputTokens;
         }
         if (compactionEffort === undefined && format === 'openai' && model.reasoningEffort !== undefined)
-            result.reasoning_effort = model.reasoningEffort;
+            applyOpenAIEffort(result, model);
         if (compactionEffort === undefined && format === 'anthropic' && model.thinkingBudget !== undefined) {
             if (model.thinkingBudget === 0)
                 result.thinking = { type: 'disabled' };

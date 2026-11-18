@@ -22,7 +22,7 @@ function nativeCheckpointConfig(model) {
     if (!Number.isSafeInteger(cap.maxTokens) || !Number.isSafeInteger(cap.maxOutputTokens) ||
         cap.maxOutputTokens <= 0 || cap.maxTokens <= cap.maxOutputTokens)
         return undefined;
-    if (model.compactionReasoningEffort && ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(model.compactionReasoningEffort)) {
+    if (model.compactionReasoningEffort && ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(model.compactionReasoningEffort)) {
         config.useLastPlannerModel = true;
         // The native default is an 8192-token summary. Its validator rejects a
         // checkpoint config if the selected custom model cannot emit that much.

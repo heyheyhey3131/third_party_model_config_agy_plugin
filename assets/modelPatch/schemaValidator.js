@@ -144,8 +144,9 @@ function validateCustomModel(model) {
         if (m[field] !== undefined && typeof m[field] !== 'boolean')
             return { valid: false, error: `${field} must be a boolean` };
     }
+    // Must match the editor's dropdown (including "max", which DeepSeek accepts).
     for (const field of ['reasoningEffort', 'compactionReasoningEffort']) {
-        if (m[field] !== undefined && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(m[field])) {
+        if (m[field] !== undefined && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(m[field])) {
             return { valid: false, error: `Invalid ${field}` };
         }
     }

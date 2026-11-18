@@ -386,15 +386,29 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                             : (0, images_1.omitUnsupportedToolImages)(prompted, (0, modelUtils_1.detectModelCapabilities)(model).supportsImages);
                         const body = (0, requestOptions_1.trimContext)(guardedBody, model.contextWindow, outputBudget);
                         // A live thinking-level selection overrides the saved reasoningEffort for
-                        // this turn only. Restricted to thinking-capable, non-Google models so a
-                        // reasoning_effort is never sent to a model/endpoint that cannot use it.
+                        // this turn only. Effort variants (copyFrom) already encode the user's
+                        // choice as the model itself, so never let a stale native thinkingConfig
+                        // overwrite e.g. an explicit "max" variant. Restricted to thinking-capable,
+                        // non-Google models so reasoning_effort is never sent where it is rejected.
                         const effortOverride = requestEffort !== undefined &&
+                            !model.copyFrom &&
                             format !== 'google' &&
                             (0, modelUtils_1.detectModelCapabilities)(model).isThinking
                             ? { reasoningEffort: requestEffort }
                             : {};
                         const effectiveModel = { ...model, ...(outputBudget ? { maxOutputTokens: outputBudget } : {}), ...effortOverride };
                         payload = (0, requestOptions_1.applyRequestOptions)(registry.translateRequest(model.provider, body, externalName, format, stateKey), effectiveModel, format, isStream, compactionEffort);
+                        if (process.env.AG_PATCH_TRACE) {
+                            try {
+                                const tracePath = require('path').join(require('os').homedir(), '.gemini', 'config', 'plugins', 'third-party-model-patch', '.trace.log');
+                                require('fs').appendFileSync(tracePath, new Date().toISOString() +
+                                    ' payload model=' + model.name +
+                                    ' effort=' + String(payload.reasoning_effort) +
+                                    ' thinking=' + JSON.stringify(payload.thinking ?? null) +
+                                    ' format=' + format + '\n');
+                            }
+                            catch (e) { /* tracing is best-effort */ }
+                        }
                         const target = cloudCode || model.rawUrl
                             ? model.apiUrl
                             : registry.getProviderUrl(model.apiUrl, externalName, isStream, registry.getTranslator(model.provider, format));

@@ -112,14 +112,18 @@ copy "…\resources\app.asar.model-patch-<version>.bak" "…\resources\app.asar"
 - 排障：代理日志看 Electron main.log 的 `[Model Patch]` / `[Proxy]` 行；
   诊断接口在插件 `assets/modelPatch/diagnostics.js`（进程内、不落盘）。
 - 思考档位：DeepSeek V4/Flash、StepFun Step 5/3.7/3.5/router 已被识别为思考
-  模型（`supportsThinking`）；本回合档位经 `readNativeRequestEffort` 折叠为
-  low/medium/high 后作为 `reasoning_effort` 下发。设 `AG_PATCH_TRACE=1` 启动可在
-  插件 `.trace.log` 看到每回合的 `thinkingConfig` 与解析结果。
+  模型（`supportsThinking`）。档位按模型原生划分：DeepSeek `low/high/max`，
+  StepFun `low/medium/high`；代理翻译成 `reasoning_effort`（DeepSeek 另加
+  `thinking` 开关）。设 `AG_PATCH_TRACE=1` 启动可在插件 `.trace.log` 看到每回合
+  的 `thinkingConfig`、选中的变体与最终发给上游的参数。
   自检：`node scripts/test-thinking.mjs`。
+- **模型列表里同一模型出现两遍**：原生选择器把无档位后缀的源条目单独成行。
+  代理已隐藏被变体复制的源条目；若仍重复，说明配置里残留旧变体，关闭
+  Antigravity 后跑 `node scripts/add-effort-variants.mjs --reset`。
 - **滑条不显示档位 / 置灰**：Codex 滑条读「模型名(档位)」标签，裸自定义模型没有
   变体就会锁定。关闭 Antigravity 后跑 `node scripts/add-effort-variants.mjs`
-  生成 low/medium/high 变体（幂等、先备份），重启或 CDP 热注入滑条即解锁。
-  等效于设置页编辑器的 Effort variants 按钮。
+  按模型原生档位生成变体（幂等、先备份），重启或 CDP 热注入滑条即解锁。
+  等效于设置页编辑器的 Effort variants 按钮，但档位集合按 provider 适配。
 
 ## 7. 注意事项
 

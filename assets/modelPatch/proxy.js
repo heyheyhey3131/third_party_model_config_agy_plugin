@@ -160,8 +160,16 @@ function matchCustomModel(models, ...selectors) {
 function customCloudCodeCatalog(upstream = {}) {
     const models = loadCustomModels();
     const identities = modelIdentities(models, upstream);
-    const labels = (0, modelCatalog_1.catalogDisplayNames)(models, upstream);
-    return (0, modelCatalog_1.mergeCloudCodeCatalog)(upstream, models
+    // The native selector renders an entry without an "(effort)" suffix as its
+    // own row, next to the effort group of its copies. Advertise only the copies
+    // when a model has enabled effort variants, so each model appears once with
+    // a per-model level submenu (mirroring native Gemini/Claude models).
+    const parentNames = new Set(models
+        .filter((model) => typeof model.copyFrom === 'string' && model.copyFrom)
+        .map((model) => model.copyFrom));
+    const visibleModels = models.filter((model) => !parentNames.has(model.name));
+    const labels = (0, modelCatalog_1.catalogDisplayNames)(visibleModels, upstream);
+    return (0, modelCatalog_1.mergeCloudCodeCatalog)(upstream, visibleModels
         .filter((model) => identities.get(model.name)?.placeholderId)
         .map((model) => {
         const identity = identities.get(model.name);

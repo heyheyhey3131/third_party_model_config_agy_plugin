@@ -568,21 +568,45 @@ function createModelManager(directory, codec, openExternal, overrides = {}) {
                 throw new Error('This model is configured without reasoning support');
             const names = new Set(store.list().map((model) => model.name));
             const format = (0, providers_1.resolveApiFormat)(source.provider, source.apiFormat);
-            const copies = ['low', 'medium', 'high'].map((effort, index) => {
-                let target = `${name}-${effort}`;
-                let suffix = 2;
-                while (names.has(target))
-                    target = `${name}-${effort}-${suffix++}`;
-                names.add(target);
+            // Per-provider native levels: DeepSeek low/high/max, StepFun
+            // low/medium/high. The native selector only groups these tokens.
+            const id = `${source.externalModelName || ''} ${source.name || ''} ${source.displayName || ''}`;
+            const levels = source.provider === 'deepseek' || /deepseek/i.test(id)
+                ? ['low', 'high', 'max']
+                : ['low', 'medium', 'high'];
+            const budgets = { low: 1024, medium: 4096, high: 8192, xhigh: 16384, max: 32768 };
+            const existing = new Map();
+            for (const model of store.list()) {
+                if (model.copyFrom !== name)
+                    continue;
+                const match = /\((low|medium|high|xhigh|max)\)\s*$/i.exec(model.displayName || '');
+                if (match && !existing.has(match[1].toLowerCase()))
+                    existing.set(match[1].toLowerCase(), model);
+            }
+            // Drop native levels this provider does not support (a DeepSeek copy
+            // created as "medium" before the per-model level set existed).
+            for (const [level, model] of existing) {
+                if (!levels.includes(level))
+                    store.delete(model.name);
+            }
+            const copies = levels.map((effort) => {
+                let target = existing.get(effort)?.name;
+                if (!target) {
+                    target = `${name}-${effort}`;
+                    let suffix = 2;
+                    while (names.has(target))
+                        target = `${name}-${effort}-${suffix++}`;
+                    names.add(target);
+                }
                 const copy = {
-                    ...source,
+                    ...(existing.get(effort) || source),
                     name: target,
                     copyFrom: name,
                     displayName: `${source.displayName || source.externalModelName || source.name} (${effort})`,
                     reasoningEffort: effort,
                 };
                 if (format !== 'openai') {
-                    const budget = [1024, 4096, 8192][index];
+                    const budget = budgets[effort];
                     copy.thinkingBudget = budget;
                     copy.maxOutputTokens = Math.max(Number(source.maxOutputTokens) || 16384, budget + 1024);
                     if (source.contextWindow && Number(source.contextWindow) <= Number(copy.maxOutputTokens))

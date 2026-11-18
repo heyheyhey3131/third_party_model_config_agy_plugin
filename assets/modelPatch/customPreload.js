@@ -1090,7 +1090,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         : [
                             button('Effort variants', () => {
                                 const { body, status, close } = openModal('Create reasoning variants');
-                                body.append(element('p', 'agy-muted', 'Creates three copies with low, medium and high reasoning effort. The provider must support reasoning. For Google and Anthropic formats the thinking budgets are 1,024 / 4,096 / 8,192 tokens; output limits increase if needed to fit the budget. Existing models and credentials are preserved.'));
+                                body.append(element('p', 'agy-muted', 'Creates copies for the provider\'s native reasoning levels (DeepSeek: low/high/max; StepFun: low/medium/high; others: low/medium/high). The provider must support reasoning. For Google and Anthropic formats the thinking budgets scale with the level; output limits increase if needed. Existing variants are updated in place and credentials are preserved.'));
                                 body.append(button('Create three variants', async () => {
                                     requireSuccess(await electron_1.ipcRenderer.invoke('storage:create-effort-variants', model.name));
                                     close();

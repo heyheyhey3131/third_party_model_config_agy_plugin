@@ -17,6 +17,7 @@ const PLUGIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROXY = path.join(PLUGIN, 'assets', 'modelPatch', 'proxy');
 const modelUtils = require(path.join(PROXY, 'modelUtils.js'));
 const requestOptions = require(path.join(PROXY, 'requestOptions.js'));
+const schemaValidator = require(path.join(PLUGIN, 'assets', 'modelPatch', 'schemaValidator.js'));
 
 let failed = 0;
 const check = (label, ok, extra = '') => {
@@ -65,13 +66,41 @@ check('no generationConfig -> undefined', requestOptions.readNativeRequestEffort
 
 // 3. request options emit reasoning_effort for openai
 const base = { model: 'deepseek-flash', messages: [{ role: 'user', content: 'hi' }] };
-const withEffort = requestOptions.applyRequestOptions(base, { ...models[0], reasoningEffort: 'medium' }, 'openai', false, undefined);
-check('openai reasoning_effort emitted', withEffort.reasoning_effort === 'medium', `got ${withEffort.reasoning_effort}`);
+const withEffort = requestOptions.applyRequestOptions(base, { ...models[0], reasoningEffort: 'high' }, 'openai', false, undefined);
+check('openai reasoning_effort emitted', withEffort.reasoning_effort === 'high', `got ${withEffort.reasoning_effort}`);
+check('deepseek thinking enabled with effort', withEffort.thinking?.type === 'enabled');
 const noEffort = requestOptions.applyRequestOptions(base, { ...models[0] }, 'openai', false, undefined);
 check('no saved effort -> no reasoning_effort', noEffort.reasoning_effort === undefined);
+// DeepSeek "none"/"off" disables thinking instead of sending an invalid effort
+const none = requestOptions.applyRequestOptions(base, { ...models[0], reasoningEffort: 'none' }, 'openai', false, undefined);
+check('deepseek none -> thinking disabled', none.thinking?.type === 'disabled' && none.reasoning_effort === undefined);
+const off = requestOptions.applyRequestOptions(base, { ...models[0], reasoningEffort: 'off' }, 'openai', false, undefined);
+check('deepseek off -> thinking disabled', off.thinking?.type === 'disabled' && off.reasoning_effort === undefined);
+// "default" leaves the provider default untouched
+const dflt = requestOptions.applyRequestOptions(base, { ...models[0], reasoningEffort: 'default' }, 'openai', false, undefined);
+check('deepseek default -> no effort, no thinking toggle', dflt.reasoning_effort === undefined && dflt.thinking === undefined);
+// sampling controls are dropped in DeepSeek thinking mode
+const sampled = requestOptions.applyRequestOptions({ ...base, temperature: 0.2, presence_penalty: 1, frequency_penalty: 1 },
+  { ...models[0], reasoningEffort: 'max' }, 'openai', false, undefined);
+check('deepseek thinking drops sampling controls',
+  sampled.temperature === undefined && sampled.presence_penalty === undefined && sampled.frequency_penalty === undefined);
+// StepFun accepts low/medium/high and gets no DeepSeek-only toggle
+const step = requestOptions.applyRequestOptions(base, { ...models[2], reasoningEffort: 'medium' }, 'openai', false, undefined);
+check('stepfun reasoning_effort medium', step.reasoning_effort === 'medium' && step.thinking === undefined);
 // google format must not receive reasoning_effort
 const google = requestOptions.applyRequestOptions({ contents: [] }, { ...models[0], reasoningEffort: 'high', apiFormat: 'google' }, 'google', false, undefined);
 check('google format untouched by reasoningEffort', google.reasoning_effort === undefined);
+
+// 4. the schema must accept every level the editor offers (DeepSeek max)
+const maxModel = {
+  name: 'models/test/deepseek-max',
+  provider: 'deepseek',
+  apiUrl: 'https://api.deepseek.com/v1/chat/completions',
+  externalModelName: 'deepseek-flash',
+  reasoningEffort: 'max',
+};
+const maxCheck = schemaValidator.validateCustomModel(maxModel);
+check('schema accepts reasoningEffort max', maxCheck.valid === true, maxCheck.error || '');
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall thinking checks passed');
 process.exit(failed ? 1 : 0);

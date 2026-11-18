@@ -2,7 +2,7 @@
   "name": "third-party-model-patch",
   "displayName": "第三方模型补丁 (Third-Party Model Patch)",
   "description": "打包并管理本机 Antigravity 的第三方模型接入补丁（modelPatch）：在 Antigravity 每次更新替换 app.asar 后一键重新应用补丁，管理 DeepSeek / StepFun 等 OpenAI 兼容自定义模型，并提供状态检查、完整性校验与备份回退。",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "qijixiang",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [
