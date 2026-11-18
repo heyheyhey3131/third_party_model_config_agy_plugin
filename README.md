@@ -22,7 +22,7 @@ language_server.exe
 
 | 部分 | 位置 | 说明 |
 | --- | --- | --- |
-| 运行时 | 本插件 `assets/modelPatch/**`（43 个文件） | 本地代理、OpenAI/Anthropic/Google/Ollama 翻译器、`thoughtSignature` 回放、多账号故障转移、自定义模型管理与加密存储 |
+| 运行时 | 本插件 `assets/modelPatch/**`（45 个文件） | 本地代理、OpenAI/Anthropic/Google/Ollama 翻译器、`thoughtSignature` 回放、多账号故障转移、自定义模型管理与加密存储 |
 | 依赖 | 宿主 `app.asar/node_modules/electron-log` | 由 asar 内转发入口把 `require("electron-log")` 指回宿主已加载的那一份；插件不再自带副本（第二份会抢 `_ELECTRON_LOG_` IPC 并让主进程崩溃） |
 | 转发入口 | `dist/modelPatch/desktop.js`、`dist/modelPatch/proxy.js` | asar 内只有几十行的 generated forwarder，运行时从本插件目录 `require` 真实实现 |
 | 主进程编辑 | `dist/main.js` | 安装 desktop 运行时（拦截 `GetAvailableModels` / `SetCloudCodeURL`） |
@@ -91,7 +91,7 @@ third-party-model-patch/
 │   ├── logo.svg
 │   ├── patches.json             # 锚点编辑定义（main.js / languageServer.js / preload.js）
 │   ├── preload-inject.js        # 追加到 preload.js 的 UI 注入 blob
-│   └── modelPatch/**            # 43 个补丁运行时文件（真实实现，随插件走）
+│   └── modelPatch/**            # 45 个补丁运行时文件（真实实现，随插件走）
 ├── scripts/
 │   ├── apply-model-patch.mjs    # 纯 Node 重打补丁器（无第三方依赖）
 │   ├── rebuild-assets.mjs       # 维护：从 clean/patched asar 重新生成 assets

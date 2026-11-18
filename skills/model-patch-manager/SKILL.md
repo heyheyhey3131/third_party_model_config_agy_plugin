@@ -28,7 +28,7 @@ description: 管理 Antigravity 第三方模型补丁（modelPatch）：检查�
 
 | 部分 | asar 内路径 | 插件资产 |
 | --- | --- | --- |
-| 运行时（43 文件） | 不进 asar，运行时从插件加载 | `assets/modelPatch/**` |
+| 运行时（45 文件） | 不进 asar，运行时从插件加载 | `assets/modelPatch/**` |
 | 转发入口 | `dist/modelPatch/desktop.js`、`dist/modelPatch/proxy.js` | 由 apply 生成的 forwarder |
 | 主进程编辑 | `dist/main.js` 插入 desktop 安装 | `assets/patches.json` |
 | LS 编辑 | `dist/languageServer.js` 启动代理 + 改写端点 flag | `assets/patches.json` |
