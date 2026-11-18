@@ -54,6 +54,7 @@ const utils_1 = require("./translators/utils");
 const artifactMetadata_1 = require("./artifactMetadata");
 const images_1 = require("./translators/images");
 const modelUtils_1 = require("./modelUtils");
+const effortOverrides_1 = require("./effortOverrides");
 const subagentRouting_1 = require("./subagentRouting");
 const subagentModels_1 = require("./subagentModels");
 const googlePoolFailover_1 = require("./googlePoolFailover");
@@ -385,16 +386,21 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                             ? prompted
                             : (0, images_1.omitUnsupportedToolImages)(prompted, (0, modelUtils_1.detectModelCapabilities)(model).supportsImages);
                         const body = (0, requestOptions_1.trimContext)(guardedBody, model.contextWindow, outputBudget);
-                        // A live thinking-level selection overrides the saved reasoningEffort for
-                        // this turn only. Effort variants (copyFrom) already encode the user's
-                        // choice as the model itself, so never let a stale native thinkingConfig
-                        // overwrite e.g. an explicit "max" variant. Restricted to thinking-capable,
-                        // non-Google models so reasoning_effort is never sent where it is rejected.
-                        const effortOverride = requestEffort !== undefined &&
-                            !model.copyFrom &&
-                            format !== 'google' &&
-                            (0, modelUtils_1.detectModelCapabilities)(model).isThinking
-                            ? { reasoningEffort: requestEffort }
+                        // The effort slider stores a level per conversation because the native
+                        // selector cannot express none/minimal/default. It wins over the
+                        // model's saved effort and over any stale native thinking level.
+                        // Effort copies (copyFrom) keep their own saved value.
+                        const conversationIdentity = typeof originalBody.conversationId === 'string'
+                            ? originalBody.conversationId
+                            : (typeof originalBody.sessionId === 'string' ? originalBody.sessionId : undefined);
+                        const overrideLevel = (0, effortOverrides_1.resolveLevel)(model.name, conversationIdentity);
+                        const thinkingCapable = (0, modelUtils_1.detectModelCapabilities)(model).isThinking;
+                        const effortOverride = format !== 'google' && thinkingCapable
+                            ? overrideLevel !== undefined
+                                ? { reasoningEffort: overrideLevel }
+                                : (requestEffort !== undefined && !model.copyFrom
+                                    ? { reasoningEffort: requestEffort }
+                                    : {})
                             : {};
                         const effectiveModel = { ...model, ...(outputBudget ? { maxOutputTokens: outputBudget } : {}), ...effortOverride };
                         payload = (0, requestOptions_1.applyRequestOptions)(registry.translateRequest(model.provider, body, externalName, format, stateKey), effectiveModel, format, isStream, compactionEffort);
@@ -403,6 +409,7 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                                 const tracePath = require('path').join(require('os').homedir(), '.gemini', 'config', 'plugins', 'third-party-model-patch', '.trace.log');
                                 require('fs').appendFileSync(tracePath, new Date().toISOString() +
                                     ' payload model=' + model.name +
+                                    ' override=' + String(overrideLevel) +
                                     ' effort=' + String(payload.reasoning_effort) +
                                     ' thinking=' + JSON.stringify(payload.thinking ?? null) +
                                     ' format=' + format + '\n');

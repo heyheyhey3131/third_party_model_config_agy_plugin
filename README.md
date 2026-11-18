@@ -97,7 +97,7 @@ third-party-model-patch/
 │   ├── rebuild-assets.mjs       # 维护：从 clean/patched asar 重新生成 assets
 │   ├── test-forwarder.mjs       # 自检：forwarder 语法 + 真实 require 链路
 │   ├── test-thinking.mjs        # 自检：思考能力识别 + 档位映射 + reasoning_effort
-│   ├── add-effort-variants.mjs  # 按模型原生档位生成变体（DeepSeek low/high/max 等）
+│   ├── cleanup-effort-variants.mjs # 清理旧版按档位复制的重复模型条目
 │   ├── activate-patch.ps1
 │   └── activate-patch.bat
 ├── skills/model-patch-manager/SKILL.md
@@ -119,53 +119,46 @@ DeepSeek V4/Flash 与 StepFun Step 5 / 3.7 / 3.5 / router 都是推理模型，�
 
 - `proxy/modelUtils.js` 把这些家族识别为思考模型，目录向原生 IDE 声明
   `supportsThinking: true`（也可用模型配置里的 `supportsThinking` 显式覆盖）。
-- **档位按模型原生划分**：DeepSeek 用 `low / high / max`（官方
-  `reasoning_effort`），StepFun 用 `low / medium / high`。不同模型的选择器
-  只有自己支持的档位。
+- **档位按模型原生划分**：DeepSeek 用 `default / none / low / high / max`，
+  StepFun 用 `default / low / medium / high`，其他 OpenAI 兼容推理模型默认
+  `default / low / medium / high`。其中 `default` 表示「不发送任何思考参数」，
+  `none` 表示关闭思考。具体集合可用模型配置的 `reasoningLevels` 数组覆盖。
 - `proxy/requestOptions.js` 把档位翻译成请求参数：DeepSeek 额外发送
   `thinking: {type: enabled}` 并在思考模式下移除 `temperature` /
-  `presence_penalty` / `frequency_penalty`；`none`（思考关闭）翻译为
+  `presence_penalty` / `frequency_penalty`；`none` 翻译为
   `thinking: {type: disabled}` 而不是非法的 `reasoning_effort`；`default`
   则不发送任何思考参数。
-- `proxy/requestOptions.js` 的 `readNativeRequestEffort` 仍会读取本回合
-  `generationConfig.thinkingConfig`，但它只用于**没有档位变体**的模型；
-  档位变体自身的 `reasoningEffort` 优先，避免原生残留档位覆盖用户选择。
-- 目录只广告**档位变体**、隐藏被复制的源条目（`proxy.js`）。原生选择器把
-  无档位后缀的条目当作独立一行，源条目会和变体组重复；隐藏后每个模型只剩
-  一行 + 档位子菜单。
+- 覆盖优先级：**滑条按会话写入的档位 > 本回合原生 `thinkingConfig` >
+  模型保存的 `reasoningEffort`**。没有滑条覆盖时才读取
+  `generationConfig.thinkingConfig`（`readNativeRequestEffort`）。
+- 目录对每个模型**只广告一行**（`proxy.js` 过滤掉所有带 `copyFrom` 的条目）。
+  原生选择器只认 `low/medium/high/xhigh/max` 五种标签，`none`/`minimal`/
+  `default` 无法做成档位子菜单，做成副本只会变成重复的独立行，因此档位完全
+  交给滑条。
+
+### 档位接口与 Codex 滑条
+
+调度器（滑条）通过两个 loopback 接口读取/写入档位，代理按会话把档位合并进
+发往上游的请求：
+
+| 方法与路径 | 作用 |
+| --- | --- |
+| `GET /plugin/effort/levels?conversationId=…` | 返回每个模型的 `levels`、`current` |
+| `POST /plugin/effort` | `{"model","level","conversationId"}`，校验档位属于该模型后落盘 |
+
+- 档位按会话保存在 `~/.gemini/antigravity/effort_overrides.json`（只含模型名与
+  档位 token，无密钥），同时记录「该模型最后一次选择」作为会话 id 对不上时的
+  兜底。
+- 接口只接受 loopback 调用方；来源页（`https://127.0.0.1:<LS 端口>`）由
+  `loopbackSecurity.js` 的白名单放行，并回显 CORS 头供滑条页面使用。
+- 滑条插件读取 `/plugin/effort/levels` 后按模型渲染分档点，拖动/按键时 POST
+  新档位；不再切换模型，也不再需要档位副本。
+- 旧版本生成过 `Name (low)` 之类的副本，升级后运行一次
+  `node scripts\cleanup-effort-variants.mjs`（关闭 Antigravity）即可清掉；
+  残留副本虽不会出现在列表中，但保留在配置里没有意义。
 
 调试：设 `AG_PATCH_TRACE=1` 启动 Antigravity，会在插件目录 `.trace.log` 记录
-每回合收到的 `thinkingConfig`、解析出的档位，以及最终发给上游的
-`reasoning_effort` / `thinking`。
-
-### 档位变体（effort variants）与 Codex 滑条
-
-Antigravity 原生选择器只识别 `low / medium / high / xhigh / max` 这五个档位
-标记（`Name (effort)`），并按模型名分组。裸的 DeepSeek/StepFun 条目没有档位
-标记，既会与变体重复显示，也会让滑条置灰锁定。因此必须生成档位变体：
-
-- 关闭 Antigravity 后运行本插件脚本（等效于设置页的 **Effort variants**
-  按钮，但按模型使用正确档位、可批量、幂等）：
-
-```bat
-node scripts\add-effort-variants.mjs            :: 校正所有支持思考的模型
-node scripts\add-effort-variants.mjs deepseek-flash step-5-preview
-node scripts\add-effort-variants.mjs --dry-run
-node scripts\add-effort-variants.mjs --reset    :: 同时清理孤立的旧变体
-```
-
-- 脚本会按模型写入原生档位：DeepSeek 生成 `low/high/max`，StepFun 生成
-  `low/medium/high`，其他 provider 默认 `low/medium/high`；并删除不匹配的旧
-  变体（例如 DeepSeek 之前的 `medium` 副本）。
-- 生成后重启 Antigravity。模型列表里每个模型只出现一次，右侧档位子菜单就是
-  该模型的原生档位；Codex 滑条的分档点也从同一组变体读取，因此不同模型的
-  滑条档位数/名称会随模型变化。
-- 滑条对运行中的窗口可用滑条插件的 `inject-cdp.cjs` 热注入。
-
-> 原生 UI 只支持上面五个档位标记，所以 DeepSeek 的 `none`（完全关闭思考）和
-> `default`（不指定档位）不能作为原生档位显示。需要关闭思考时可把该模型条目
-> 的 Reasoning effort 直接设为 `none`（设置页下拉框支持），代理会翻译成
-> `thinking: {type: disabled}`。
+每回合命中的滑条覆盖值，以及最终发给上游的 `reasoning_effort` / `thinking`。
 
 ## 验证记录（2026-11-18，2.32.2）
 
@@ -178,7 +171,8 @@ node scripts\add-effort-variants.mjs --reset    :: 同时清理孤立的旧变�
   DeepSeek-V4-Pro / Step 5 Preview）在设置中可见。
 - `test-thinking.mjs`：DeepSeek/StepFun 推理模型被识别为思考模型；原生档位
   映射正确；OpenAI 格式按模型下发 `reasoning_effort`（DeepSeek 额外处理
-  `thinking` 开关与采样参数）；模型列表对每个模型只显示一行档位组。
+  `thinking` 开关与采样参数）；每个模型的档位集合、`default/none` 语义、
+  `reasoningLevels` 校验、会话级覆盖持久化均通过。
 
 ## 许可与署名
 

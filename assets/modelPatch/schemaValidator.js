@@ -150,6 +150,16 @@ function validateCustomModel(model) {
             return { valid: false, error: `Invalid ${field}` };
         }
     }
+    // Optional per-model level set advertised to the effort slider.
+    if (m.reasoningLevels !== undefined) {
+        if (!Array.isArray(m.reasoningLevels) || !m.reasoningLevels.length) {
+            return { valid: false, error: 'reasoningLevels must be a non-empty array' };
+        }
+        const allowed = ['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+        if (!m.reasoningLevels.every((level) => typeof level === 'string' && allowed.includes(level))) {
+            return { valid: false, error: 'Invalid reasoning level' };
+        }
+    }
     for (const field of ['contextWindow', 'maxOutputTokens', 'thinkingBudget', 'timeout', 'idleTimeout', 'retryBudgetMs', 'maxRetries']) {
         const value = m[field];
         const minimum = field === 'thinkingBudget' || field === 'maxRetries' ? 0 : 1;

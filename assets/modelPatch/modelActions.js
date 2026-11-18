@@ -90,7 +90,10 @@ function createModelActions(manager) {
         },
         'storage:test-model-connection': manager.testModel,
         'storage:test-model-generation': manager.testGeneration,
+        // Leftover effort copies are removed rather than recreated: levels are
+        // applied per conversation by the proxy and shown in the effort slider.
         'storage:create-effort-variants': manager.createEffortVariants,
+        'storage:cleanup-effort-variants': manager.createEffortVariants,
         'storage:get-provider-presets': manager.presets,
         'storage:discover-models': manager.discoverModels,
         'storage:discover-local': manager.discoverLocal,

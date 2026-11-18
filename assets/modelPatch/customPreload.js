@@ -1085,19 +1085,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         setStatus(rowStatus, 'Testing…');
                         const result = requireSuccess(await storageAPI.testModelConnection(model));
                         setStatus(rowStatus, result.message || 'Connection successful.');
-                    }, rowStatus), button('Test generation', () => openGenerationTest(model), rowStatus), button('Edit', () => openModelModal(model, 'edit'), rowStatus), button('Duplicate', () => openModelModal(model, 'duplicate'), rowStatus), ...(model.supportsThinking === false
-                        ? []
-                        : [
-                            button('Effort variants', () => {
-                                const { body, status, close } = openModal('Create reasoning variants');
-                                body.append(element('p', 'agy-muted', 'Creates copies for the provider\'s native reasoning levels (DeepSeek: low/high/max; StepFun: low/medium/high; others: low/medium/high). The provider must support reasoning. For Google and Anthropic formats the thinking budgets scale with the level; output limits increase if needed. Existing variants are updated in place and credentials are preserved.'));
-                                body.append(button('Create three variants', async () => {
-                                    requireSuccess(await electron_1.ipcRenderer.invoke('storage:create-effort-variants', model.name));
-                                    close();
-                                    await modelsChanged();
-                                }, status, true));
-                            }, rowStatus),
-                        ]), button('Delete', () => openDeleteModelModal(model), rowStatus));
+                    }, rowStatus), button('Test generation', () => openGenerationTest(model), rowStatus), button('Edit', () => openModelModal(model, 'edit'), rowStatus), button('Duplicate', () => openModelModal(model, 'duplicate'), rowStatus), button('Delete', () => openDeleteModelModal(model), rowStatus));
                     row.append(info, actions);
                     group.append(row);
                 }
@@ -1226,6 +1214,9 @@ window.addEventListener('DOMContentLoaded', () => {
                 value || 'Provider default',
             ]), String(existing?.reasoningEffort || ''));
             const thinking = field(advancedGrid, 'Thinking budget (tokens)', 'agy-thinking-budget', existing?.thinkingBudget != null ? String(existing.thinkingBudget) : '', 'number');
+            const levelList = field(advancedGrid, 'Reasoning levels (slider)', 'agy-reasoning-levels', Array.isArray(existing?.reasoningLevels) ? existing.reasoningLevels.join(', ') : '');
+            levelList.placeholder = 'auto';
+            advancedGrid.append(element('p', 'agy-muted', 'Which levels the effort slider offers for this model, comma separated and weakest first. Leave blank for the provider preset (DeepSeek: default/none/low/high/max, StepFun: default/low/medium/high, others: default/low/medium/high). Anything the provider does not document will be rejected there.'));
             const compactionEffort = selectField(advancedGrid, 'Compaction reasoning effort', 'agy-compaction-effort', ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map((value) => [
                 value,
                 value || 'Use normal model settings',
@@ -1347,6 +1338,10 @@ window.addEventListener('DOMContentLoaded', () => {
                 const customHeaders = readJson(headers, 'Custom headers');
                 if (customHeaders && Object.values(customHeaders).some((value) => typeof value !== 'string'))
                     throw new Error('Custom header values must be strings.');
+                const reasoningLevels = levelList.value
+                    .split(/[\s,]+/)
+                    .map((value) => value.trim().toLowerCase())
+                    .filter(Boolean);
                 return {
                     ...(mode === 'edit' && existing ? existing : {}),
                     ...connection(),
@@ -1372,6 +1367,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         }
                         : undefined,
                     reasoningEffort: effort.value || undefined,
+                    reasoningLevels: reasoningLevels.length ? reasoningLevels : undefined,
                     compactionReasoningEffort: compactionEffort.value || undefined,
                     compactionThresholdPercent,
                     thinkingBudget: readNumber(thinking, 'Thinking budget'),

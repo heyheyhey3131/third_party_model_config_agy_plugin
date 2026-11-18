@@ -96,6 +96,8 @@ const subagentModels_1 = require("./proxy/subagentModels");
 const loopbackSecurity_1 = require("./proxy/loopbackSecurity");
 const nativeSubagentResponse_1 = require("./proxy/nativeSubagentResponse");
 const googlePoolFailover_1 = require("./proxy/googlePoolFailover");
+const reasoningLevels_1 = require("./proxy/reasoningLevels");
+const effortOverrides_1 = require("./proxy/effortOverrides");
 let languageServerPortResolver;
 let languageServerRoutingEnabled = false;
 /** Registered by the desktop with its own live language-server port getter. */
@@ -160,14 +162,11 @@ function matchCustomModel(models, ...selectors) {
 function customCloudCodeCatalog(upstream = {}) {
     const models = loadCustomModels();
     const identities = modelIdentities(models, upstream);
-    // The native selector renders an entry without an "(effort)" suffix as its
-    // own row, next to the effort group of its copies. Advertise only the copies
-    // when a model has enabled effort variants, so each model appears once with
-    // a per-model level submenu (mirroring native Gemini/Claude models).
-    const parentNames = new Set(models
-        .filter((model) => typeof model.copyFrom === 'string' && model.copyFrom)
-        .map((model) => model.copyFrom));
-    const visibleModels = models.filter((model) => !parentNames.has(model.name));
+    // Reasoning strength is chosen in the Codex effort slider and applied per
+    // conversation by the proxy, so the selector must advertise exactly one row
+    // per model. Leftover effort copies (copyFrom) stay in the config for
+    // compatibility but are never listed, which also prevents duplicate rows.
+    const visibleModels = models.filter((model) => !model.copyFrom);
     const labels = (0, modelCatalog_1.catalogDisplayNames)(visibleModels, upstream);
     return (0, modelCatalog_1.mergeCloudCodeCatalog)(upstream, visibleModels
         .filter((model) => identities.get(model.name)?.placeholderId)
@@ -929,6 +928,103 @@ function encodeModelEntryForGetModels(name, displayName, mapping) {
     }
     return encodeProtoBuf(fields);
 }
+// ─── Effort slider bridge ───────────────────────────────────────────────────
+/**
+ * The slider page is served from the language-server origin, so it needs CORS
+ * on these two loopback endpoints. Anything else (including the guard's
+ * loopback-only rule) is unchanged.
+ */
+function effortApiCors(req) {
+    const origin = req.headers.origin;
+    const allowed = typeof origin === 'string' && /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(origin);
+    // The loopback guard has already rejected every caller that is not the IDE
+    // page or the proxy origin, so echoing the origin is safe here.
+    return {
+        ...(allowed ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '600',
+        'Cache-Control': 'no-store',
+    };
+}
+function handleEffortApi(req, res, requestUrl) {
+    const cors = effortApiCors(req);
+    const send = (status, payload) => {
+        if (res.headersSent || res.writableEnded)
+            return;
+        res.writeHead(status, { ...cors, 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(payload));
+    };
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204, cors);
+        res.end();
+        return;
+    }
+    if (req.method === 'GET' && requestUrl.pathname === '/plugin/effort/levels') {
+        const conversationId = requestUrl.searchParams.get('conversationId') || undefined;
+        const models = loadCustomModels().map((model) => {
+            const levels = (0, reasoningLevels_1.levelsForModel)(model);
+            const saved = levels.includes(String(model.reasoningEffort || '').toLowerCase())
+                ? String(model.reasoningEffort).toLowerCase()
+                : undefined;
+            const override = (0, effortOverrides_1.resolveLevel)(model.name, conversationId);
+            return {
+                name: model.name,
+                displayName: model.displayName || model.externalModelName || model.name,
+                levels,
+                current: override ?? saved ?? (0, reasoningLevels_1.defaultLevelForModel)(model),
+            };
+        });
+        send(200, { models });
+        return;
+    }
+    if (req.method === 'POST' && requestUrl.pathname === '/plugin/effort') {
+        let body = '';
+        let rejected = false;
+        req.on('data', (chunk) => {
+            if (rejected)
+                return;
+            body += chunk;
+            if (body.length > 64 * 1024) {
+                rejected = true;
+                send(413, { error: 'Body too large' });
+                req.destroy();
+            }
+        });
+        req.on('end', () => {
+            if (rejected)
+                return;
+            let parsed;
+            try {
+                parsed = JSON.parse(body || '{}');
+            }
+            catch {
+                send(400, { error: 'Invalid JSON' });
+                return;
+            }
+            const level = (0, reasoningLevels_1.normalizeLevel)(parsed.level);
+            const wanted = String(parsed.model || '').toLowerCase();
+            const models = loadCustomModels();
+            const target = models.find((model) => model.name === parsed.model) ||
+                models.find((model) => String(model.name).toLowerCase() === wanted) ||
+                models.find((model) => String(model.displayName || '').toLowerCase() === wanted);
+            if (!target) {
+                send(404, { error: 'Unknown model' });
+                return;
+            }
+            const levels = (0, reasoningLevels_1.levelsForModel)(target);
+            if (!levels.includes(level)) {
+                send(400, { error: 'Unsupported level', levels });
+                return;
+            }
+            (0, effortOverrides_1.setLevel)(target.name, level, parsed.conversationId);
+            electron_log_1.default.info(`[Proxy] Effort override: ${target.name} -> ${level}`);
+            send(200, { ok: true, model: target.name, level, levels });
+        });
+        return;
+    }
+    send(405, { error: 'Method not allowed' });
+}
 // ─── GetAvailableModels Proxy Handler ───────────────────────────────────────
 function handleGetAvailableModelsProxy(res, reqBody, lsUrl) {
     const lsParsed = (0, loopbackSecurity_1.languageServerModelsUrl)(lsUrl, currentLanguageServerPort());
@@ -1076,6 +1172,13 @@ function handleRequest(req, res) {
     if (req.method === 'GET' && requestUrl.pathname === '/metrics') {
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify((0, customRequest_1.getProxyMetrics)()));
+        return;
+    }
+    // Reasoning-level bridge for the Codex effort slider. The native selector
+    // only knows five effort tokens, so the slider reads each model's real
+    // level set here and posts the user's choice for the active conversation.
+    if (requestUrl.pathname === '/plugin/effort' || requestUrl.pathname === '/plugin/effort/levels') {
+        handleEffortApi(req, res, requestUrl);
         return;
     }
     // P0-4: Enforce maximum request body size to prevent memory exhaustion DoS while
@@ -1366,6 +1469,8 @@ async function startProxy(options = {}) {
     serviceDataDirectory = options.dataDirectory ? path.resolve(options.dataDirectory) : undefined;
     languageServerRoutingEnabled = options.allowLanguageServerRouting !== false;
     shutdownGraceMs = options.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS;
+    (0, effortOverrides_1.configure)(serviceDataDirectory ||
+        path.join(require('electron').app.getPath('home'), '.gemini', 'antigravity'));
     cloudCodeRouting = options.ideCloudCodeRouting ? new cloudCodeRouting_1.CloudCodeRouting() : undefined;
     const requiredPort = options.port ?? (0, listen_1.getRequiredProxyPort)(require('electron').app.getAppPath());
     const newServer = http.createServer((req, res) => {

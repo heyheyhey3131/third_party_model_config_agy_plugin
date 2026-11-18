@@ -112,18 +112,21 @@ copy "…\resources\app.asar.model-patch-<version>.bak" "…\resources\app.asar"
 - 排障：代理日志看 Electron main.log 的 `[Model Patch]` / `[Proxy]` 行；
   诊断接口在插件 `assets/modelPatch/diagnostics.js`（进程内、不落盘）。
 - 思考档位：DeepSeek V4/Flash、StepFun Step 5/3.7/3.5/router 已被识别为思考
-  模型（`supportsThinking`）。档位按模型原生划分：DeepSeek `low/high/max`，
-  StepFun `low/medium/high`；代理翻译成 `reasoning_effort`（DeepSeek 另加
-  `thinking` 开关）。设 `AG_PATCH_TRACE=1` 启动可在插件 `.trace.log` 看到每回合
-  的 `thinkingConfig`、选中的变体与最终发给上游的参数。
-  自检：`node scripts/test-thinking.mjs`。
-- **模型列表里同一模型出现两遍**：原生选择器把无档位后缀的源条目单独成行。
-  代理已隐藏被变体复制的源条目；若仍重复，说明配置里残留旧变体，关闭
-  Antigravity 后跑 `node scripts/add-effort-variants.mjs --reset`。
-- **滑条不显示档位 / 置灰**：Codex 滑条读「模型名(档位)」标签，裸自定义模型没有
-  变体就会锁定。关闭 Antigravity 后跑 `node scripts/add-effort-variants.mjs`
-  按模型原生档位生成变体（幂等、先备份），重启或 CDP 热注入滑条即解锁。
-  等效于设置页编辑器的 Effort variants 按钮，但档位集合按 provider 适配。
+  模型（`supportsThinking`）。档位按模型原生划分：DeepSeek
+  `default/none/low/high/max`，StepFun `default/low/medium/high`，可用模型配置
+  的 `reasoningLevels` 覆盖。代理翻译成 `reasoning_effort`（DeepSeek 另加
+  `thinking` 开关，`none` 关闭思考，`default` 不发送参数）。设
+  `AG_PATCH_TRACE=1` 启动可在插件 `.trace.log` 看到每回合命中的滑条覆盖值与
+  最终发给上游的参数。自检：`node scripts/test-thinking.mjs`。
+- **模型列表里同一模型出现两遍**：旧版本会为每个档位复制一份模型条目。代理
+  现在过滤掉所有 `copyFrom` 副本，每个模型只显示一行；配置里残留的旧副本可用
+  `node scripts/cleanup-effort-variants.mjs`（关闭 Antigravity，先备份）清掉。
+- **滑条不显示档位 / 置灰**：档位不再来自「模型名(档位)」变体，而是滑条从
+  `GET http://127.0.0.1:50999/plugin/effort/levels` 读取；返回空或 403 时先确认
+  第三方模型补丁的代理在 50999 运行、且模型已启用。滑条拖动时 POST 到
+  `/plugin/effort`，代理按会话写入 `~/.gemini/antigravity/effort_overrides.json`
+  并在该会话的请求中生效，不切换模型。原生下拉只有一行是预期行为——原生 UI
+  只认五个档位 token，`none/minimal/default` 只能由滑条表达。
 
 ## 7. 注意事项
 

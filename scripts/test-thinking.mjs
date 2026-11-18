@@ -102,5 +102,45 @@ const maxModel = {
 const maxCheck = schemaValidator.validateCustomModel(maxModel);
 check('schema accepts reasoningEffort max', maxCheck.valid === true, maxCheck.error || '');
 
+// 5. per-model level sets advertised to the effort slider
+const levels = require(path.join(PROXY, 'reasoningLevels.js'));
+check('deepseek levels', JSON.stringify(levels.levelsForModel(models[0])) === '["default","none","low","high","max"]',
+  JSON.stringify(levels.levelsForModel(models[0])));
+check('stepfun levels', JSON.stringify(levels.levelsForModel(models[2])) === '["default","low","medium","high"]',
+  JSON.stringify(levels.levelsForModel(models[2])));
+check('generic levels', JSON.stringify(levels.levelsForModel({ name: 'models/custom/x', provider: 'custom', externalModelName: 'x' })) === '["default","low","medium","high"]');
+check('explicit reasoningLevels wins',
+  JSON.stringify(levels.levelsForModel({ provider: 'custom', reasoningLevels: ['high', 'none', 'low'] })) === '["none","low","high"]');
+check('single explicit level falls back to preset',
+  JSON.stringify(levels.levelsForModel({ provider: 'deepseek', reasoningLevels: ['high'] })) === '["default","none","low","high","max"]');
+check('unknown level token rejected', levels.normalizeLevel('ultra') === 'ultra' && levels.isLevel('ultra') === false);
+check('off aliases to none', levels.normalizeLevel('OFF') === 'none');
+check('saved effort becomes current', levels.defaultLevelForModel({ provider: 'deepseek', reasoningEffort: 'high' }) === 'high');
+check('unsaved level falls back to default', levels.defaultLevelForModel({ provider: 'stepfun', reasoningEffort: 'max' }) === 'default');
+
+const schemaLevels = schemaValidator.validateCustomModel({
+  ...maxModel,
+  name: 'models/test/levels',
+  reasoningLevels: ['default', 'none', 'low', 'high', 'max'],
+});
+check('schema accepts reasoningLevels', schemaLevels.valid === true, schemaLevels.error || '');
+const schemaBadLevel = schemaValidator.validateCustomModel({ ...maxModel, name: 'models/test/bad', reasoningLevels: ['ultra'] });
+check('schema rejects unknown reasoning level', schemaBadLevel.valid === false);
+
+// 6. conversation-scoped overrides persisted for the proxy
+const os = require('os');
+const fs = require('fs');
+const overrides = require(path.join(PROXY, 'effortOverrides.js'));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-effort-'));
+overrides.configure(tmpDir);
+check('no override initially', overrides.resolveLevel('models/test/a', 'conv-a') === undefined);
+overrides.setLevel('models/test/a', 'none', 'conv-a');
+check('conversation override applies', overrides.resolveLevel('models/test/a', 'conv-a') === 'none');
+check('other conversation falls back to model default', overrides.resolveLevel('models/test/a', 'conv-b') === 'none');
+overrides.reset();
+overrides.configure(tmpDir);
+check('override survives reload', overrides.resolveLevel('models/test/a', 'conv-a') === 'none');
+check('override file stores no secrets', !/apiKey|secret|token/i.test(fs.readFileSync(path.join(tmpDir, 'effort_overrides.json'), 'utf8')));
+
 console.log(failed ? `\n${failed} check(s) failed` : '\nall thinking checks passed');
 process.exit(failed ? 1 : 0);
