@@ -97,6 +97,7 @@ third-party-model-patch/
 │   ├── rebuild-assets.mjs       # 维护：从 clean/patched asar 重新生成 assets
 │   ├── test-forwarder.mjs       # 自检：forwarder 语法 + 真实 require 链路
 │   ├── test-thinking.mjs        # 自检：思考能力识别 + 档位映射 + reasoning_effort
+│   ├── add-effort-variants.mjs  # 为自定义推理模型生成 low/medium/high 变体（供滑条读档位）
 │   ├── activate-patch.ps1
 │   └── activate-patch.bat
 ├── skills/model-patch-manager/SKILL.md
@@ -128,6 +129,26 @@ DeepSeek V4/Flash 与 StepFun Step 5 / 3.7 / 3.5 / router 都是推理模型，�
 
 调试：设 `AG_PATCH_TRACE=1` 启动 Antigravity，会在插件目录 `.trace.log` 记录
 每回合收到的 `thinkingConfig` 与解析出的档位，用于确认原生 IDE 是否下发档位。
+
+### 让 Codex 风格滑条显示档位（effort 变体）
+
+`antigravity-codex-effort-slider` 滑条通过解析原生模型选择器里
+「模型名 (low/medium/high)」这类标签来呈现档位。**裸的 DeepSeek/StepFun 条目
+没有档位标签，滑条会置灰锁定**；必须先生成 effort 变体（low/medium/high 副本，
+各自带固定 `reasoningEffort`）。两种方式：
+
+- 设置页「自定义模型」编辑器里的 **Effort variants** 按钮（应用内置）；或
+- 关闭 Antigravity 后运行本插件脚本（等效、可批量、幂等）：
+
+```bat
+node scripts\add-effort-variants.mjs            :: 为所有支持思考且尚无变体的模型生成
+node scripts\add-effort-variants.mjs deepseek-flash step-5-preview
+node scripts\add-effort-variants.mjs --dry-run
+```
+
+生成后重启 Antigravity（或对运行中窗口用滑条插件的 `inject-cdp.cjs` 热注入），
+滑条即解锁并出现 low/medium/high 三档。脚本逐字复制源模型（含机器绑定的
+`enc:` apiKey），与应用内按钮行为一致，并先备份 `custom_models.json`。
 
 ## 验证记录（2026-11-18，2.32.2）
 
