@@ -1226,7 +1226,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 value || 'Provider default',
             ]), String(existing?.reasoningEffort || ''));
             const thinking = field(advancedGrid, 'Thinking budget (tokens)', 'agy-thinking-budget', existing?.thinkingBudget != null ? String(existing.thinkingBudget) : '', 'number');
-            const compactionEffort = selectField(advancedGrid, 'Compaction reasoning effort', 'agy-compaction-effort', ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'].map((value) => [
+            const compactionEffort = selectField(advancedGrid, 'Compaction reasoning effort', 'agy-compaction-effort', ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map((value) => [
                 value,
                 value || 'Use normal model settings',
             ]), String(existing?.compactionReasoningEffort || ''));
