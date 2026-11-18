@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="pad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f4f5"/>
+      <stop offset="1" stop-color="#d4d4d8"/>
+    </linearGradient>
+  </defs>
+  <!-- rounded squircle background -->
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg)"/>
+  <!-- bandage / patch, rotated -45deg -->
+  <g transform="rotate(-45 64 64)">
+    <rect x="14" y="54" width="100" height="20" rx="10" fill="url(#pad)" opacity="0.92"/>
+    <rect x="42" y="46" width="44" height="36" rx="13" fill="url(#pad)"/>
+    <circle cx="52" cy="56" r="2.6" fill="#8b5cf6"/>
+    <circle cx="76" cy="56" r="2.6" fill="#8b5cf6"/>
+    <circle cx="52" cy="72" r="2.6" fill="#8b5cf6"/>
+    <circle cx="76" cy="72" r="2.6" fill="#8b5cf6"/>
+  </g>
+  <!-- plug prongs hint (integration) -->
+  <g stroke="#f4f4f5" stroke-width="5" stroke-linecap="round" opacity="0.95">
+    <line x1="46" y1="18" x2="46" y2="30"/>
+    <line x1="82" y1="18" x2="82" y2="30"/>
+  </g>
+</svg>

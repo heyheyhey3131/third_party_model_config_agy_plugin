@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "marker": "antigravity-model-patch",
+  "files": {
+    "dist/main.js": {
+      "edits": [
+        {
+          "op": "insertBefore",
+          "anchor": "electron_1.app\n    .whenReady()",
+          "text": "/* antigravity-model-patch: vendor-runtime-v1 */\nrequire('./modelPatch/desktop').install(() => require('./languageServer').getLsPort());"
+        }
+      ]
+    },
+    "dist/languageServer.js": {
+      "edits": [
+        {
+          "op": "insertBefore",
+          "anchor": "    const { headless, hostBridgeUrl, hostBridgeToken, wsl } = options;",
+          "text": "    /* antigravity-model-patch: vendor-runtime-v1 */\n    const __antigravityModelPatchUrl = options.wsl ? undefined : 'http://localhost:' + await require('./modelPatch/proxy').startProxy();\n"
+        },
+        {
+          "op": "insertBefore",
+          "anchor": "        // Point the LS at the main process' host bridge server. The LS tolerates",
+          "text": "        if (__antigravityModelPatchUrl) {\n          const __antigravityModelPatchSetFlag = (flag) => {\n            const i = args.indexOf(flag);\n            if (i >= 0) args[i + 1] = __antigravityModelPatchUrl;\n            else args.push(flag, __antigravityModelPatchUrl);\n          };\n          __antigravityModelPatchSetFlag('--api_server_url');\n          __antigravityModelPatchSetFlag('--cloud_code_endpoint');\n          __antigravityModelPatchSetFlag('--inference_api_server_url');\n        }"
+        }
+      ]
+    },
+    "dist/preload.js": {
+      "appendFile": "preload-inject.js"
+    }
+  },
+  "addTree": null,
+  "forwarders": {
+    "from": "modelPatch",
+    "to": "dist/modelPatch",
+    "note": "schema 2: app.asar keeps only generated forwarder stubs for the entry points required by the edits; the real runtime stays in the plugin's assets/modelPatch and is loaded from there."
+  }
+}

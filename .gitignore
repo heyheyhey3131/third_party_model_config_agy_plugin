@@ -1,0 +1,22 @@
+# Runtime / debug artifacts
+.trace.log
+*.log
+node_modules/
+
+# Local backups / scratch
+*.bak
+*.tmp
+*.asar
+*.asar.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Never commit credentials or machine-bound model config
+custom_models.json
+*.key
+.env
+.model-credentials-key

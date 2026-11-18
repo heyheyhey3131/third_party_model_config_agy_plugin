@@ -1,0 +1,20 @@
+third_party_model_config_agy_plugin
+Copyright 2026 third_party_model_config_agy_plugin contributors
+
+This product includes software developed as part of the Antigravity
+third-party model patch (modelPatch) runtime, adapted from:
+
+  antigravity-add-model
+  https://github.com/vahapogut/antigravity-add-model
+  Copyright vahapogut, licensed under the Apache License, Version 2.0.
+
+The modelPatch runtime under assets/modelPatch/ is derived from that
+project's desktop addon. The forwarder-based packaging, the plugin
+manifest/skill, the re-apply tooling (scripts/apply-model-patch.mjs), and
+the thinking-level support are additions/modifications by this project's
+contributors, also under the Apache License, Version 2.0.
+
+Google Antigravity is a product of Google LLC. This project is an
+unofficial, community-maintained integration and is not affiliated with
+or endorsed by Google. "Antigravity" and related marks are trademarks of
+Google LLC; they are used here only to describe compatibility.
