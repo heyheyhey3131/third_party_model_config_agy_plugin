@@ -131,10 +131,15 @@ copy "…\resources\app.asar.model-patch-<version>.bak" "…\resources\app.asar"
 ## 7. 注意事项
 
 - 应用补丁时 Antigravity 必须关闭（`language_server.exe` 也要退出）。
+- **版本更新后功能消失是预期现象**：官方更新整体替换 `app.asar`，清掉_archive 内
+  钩子；运行时在插件目录不受影响。`scripts/patch-guardian.cjs` 常驻守护会在更新后
+  应用关闭的空窗自动重打两个补丁（`--install-task` 注册 HKCU Run 开机自启，无需
+  管理员），用户无需手动操作。仅当大版本改动锚点致 `--apply` 失配时才需人工更新
+  `assets/patches.json`。手动恢复：关闭应用后 `--apply` + 滑条 `patch-asar.cjs`。
 - 端口 50999 被占用时代理起不来，Antigravity 会报错；关闭占用进程即可。
 - 本插件不往 `resources/` 写运行时文件，唯一写入是重建 `app.asar`；备份
   `app.asar.model-patch-<version>.bak` 放在 `resources/` 根下（不深埋子目录，
   避免超长路径导致 NSIS 卸载失败）。旧版遗留的 `.antigravity-model-patch\`
   与运行时无关，可安全删除。
-- 本插件与「更新修复」守护（计划任务 `Antigravity Update Fix`）互不冲突：
-  两者改写不同文件；本插件 apply 会重建 asar 并刷新全部 integrity。
+- 守护进程只在 Antigravity 关闭时写盘并做防抖，不会与运行中的实例或官方更新器
+  抢文件；日志在 `scripts/patch-guardian.log`。

@@ -98,6 +98,7 @@ third-party-model-patch/
 │   ├── test-forwarder.mjs       # 自检：forwarder 语法 + 真实 require 链路
 │   ├── test-thinking.mjs        # 自检：思考能力识别 + 档位映射 + reasoning_effort
 │   ├── cleanup-effort-variants.mjs # 清理旧版按档位复制的重复模型条目
+│   ├── patch-guardian.cjs       # 常驻守护：更新后自动重打两个补丁（开机自启）
 │   ├── activate-patch.ps1
 │   └── activate-patch.bat
 ├── skills/model-patch-manager/SKILL.md
@@ -160,6 +161,33 @@ DeepSeek V4/Flash 与 StepFun Step 5 / 3.7 / 3.5 / router 都是推理模型，�
 调试：设 `AG_PATCH_TRACE=1` 启动 Antigravity，会在插件目录 `.trace.log` 记录
 每回合命中的滑条覆盖值，以及最终发给上游的 `reasoning_effort` / `thinking`。
 
+## 版本更新与自动修复（patch-guardian）
+
+**为什么更新后功能会消失？** 两个插件都是通过改写 `resources/app.asar` 安装的
+（模型补丁写入 forwarder + 锚点编辑，滑条内联 preload payload）。Antigravity 官方
+更新会**整体替换 app.asar**，于是-archive 内的钩子被清掉；而真正的运行时在插件目录
+里，不受影响。所以更新后只需把钩子重新写回，无需改任何插件代码。
+
+**自动修复：** `scripts/patch-guardian.cjs` 是一个常驻守护进程，监视 `app.asar` 的
+修改时间。一旦发现它被替换且补丁标记缺失，就等待 Antigravity 处于**关闭**状态的空窗
+（官方更新安装时会先退出应用），自动重跑 `apply-model-patch.mjs --apply` 与滑条
+`patch-asar.cjs`。下一次启动即已带补丁，**用户无需任何手动操作**。它只在应用关闭时
+写盘，且做防抖，不会与运行中的实例或更新器抢文件。
+
+```bat
+node scripts\patch-guardian.cjs --install-task   :: 注册开机自启（HKCU Run，无需管理员）
+node scripts\patch-guardian.cjs --remove-task    :: 移除自启
+node scripts\patch-guardian.cjs --once           :: 手动单次检查/修复
+node scripts\patch-guardian.cjs                  :: 前台常驻（调试）
+```
+
+日志在 `scripts/patch-guardian.log`。滑条另有 `tools/auto-heal.cjs` 可在运行中生成
+待替换包、退出时自动覆盖，二者互补。
+
+> 若某次大版本更新改动了锚点代码（`assets/patches.json` 的 anchor 失配），
+> `--apply` 会报错提示；届时才需要人工更新锚点。2.32.2 → 2.33.0 锚点未变，守护进程
+> 已验证可全自动修复。
+
 ## 验证记录（2026-11-18，2.32.2）
 
 - `test-forwarder.mjs`：两个 forwarder 均解析到插件内真实实现，
@@ -173,6 +201,14 @@ DeepSeek V4/Flash 与 StepFun Step 5 / 3.7 / 3.5 / router 都是推理模型，�
   映射正确；OpenAI 格式按模型下发 `reasoning_effort`（DeepSeek 额外处理
   `thinking` 开关与采样参数）；每个模型的档位集合、`default/none` 语义、
   `reasoningLevels` 校验、会话级覆盖持久化均通过。
+
+## 验证记录（2026-11-19，2.33.0 更新后）
+
+- 官方更新整体替换 app.asar 后两插件钩子丢失（`--verify` 报 markers missing）；
+  锚点（main/languageServer/preload）在 2.33.0 仍匹配，无需改插件代码。
+- 手动 `--apply` + 滑条 `patch-asar` 恢复，`--verify` 781 文件 integrity 0 bad。
+- `patch-guardian.cjs` 模拟更新（换入干净 2.33.0 asar、应用关闭）后**自动**重打两个
+  补丁并回到 healthy，全程无手动干预；开机自启已注册（HKCU Run）。
 
 ## 许可与署名
 
