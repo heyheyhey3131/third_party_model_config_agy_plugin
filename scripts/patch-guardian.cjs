@@ -44,6 +44,9 @@ const MODEL_MARKER = "antigravity-model-patch";
 const SLIDER_MARKER = "__AG_CODEX_EFFORT_SLIDER_START__";
 const POLL_MS = 600;
 const DEBOUNCE_MS = 800;
+// A launch this young right after an asar change is the post-update relaunch;
+// restart it once into the patched state so no manual quit is needed.
+const FRESH_WINDOW_MS = 180000;
 
 const args = process.argv.slice(2);
 const ONCE = args.includes("--once");
@@ -63,6 +66,37 @@ function isRunning() {
     ["/fo", "csv", "/nh"], { encoding: "utf8" });
   const out = (r.stdout || "").toLowerCase();
   return out.includes('"antigravity.exe"') || out.includes('"language_server.exe"');
+}
+
+// Milliseconds since the (first) Antigravity process started; Infinity if unknown.
+function appUptimeMs() {
+  try {
+    const r = spawnSync("powershell.exe", ["-NoProfile", "-Command",
+      "(Get-Process Antigravity -ErrorAction SilentlyContinue | Select-Object -First 1).StartTime.ToString('o')"],
+      { encoding: "utf8" });
+    const out = (r.stdout || "").trim();
+    if (!out) return Infinity;
+    return Date.now() - new Date(out).getTime();
+  } catch { return Infinity; }
+}
+function killApp() {
+  spawnSync("taskkill.exe", ["/F", "/IM", "Antigravity.exe", "/T"], { stdio: "ignore" });
+  spawnSync("taskkill.exe", ["/F", "/IM", "language_server.exe", "/T"], { stdio: "ignore" });
+}
+function waitClosed(timeoutMs = 30000) {
+  const start = Date.now();
+  while (isRunning() && Date.now() - start < timeoutMs) {
+    spawnSync(process.execPath, ["-e", "setTimeout(()=>{},500)"], { stdio: "ignore" });
+  }
+  return !isRunning();
+}
+function relaunch() {
+  try {
+    const asar = findDefaultAsarPath();
+    const exe = path.join(path.dirname(path.dirname(asar)), "Antigravity.exe");
+    spawn(exe, [], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    log("relaunched Antigravity into patched state");
+  } catch (e) { log("relaunch failed: " + (e && e.message)); }
 }
 
 function readMarkers(asarPath) {
@@ -98,7 +132,9 @@ async function tick(state) {
 
   if (mtime === state.lastMtime && state.healthy) return; // idle, nothing changed
 
+  let changed = false;
   if (mtime !== state.lastMtime) {
+    changed = true;
     state.lastMtime = mtime;
     state.pendingSince = 0;
     let m;
@@ -109,7 +145,21 @@ async function tick(state) {
   }
   if (state.healthy || state.busy) return;
 
-  if (isRunning()) { state.pendingSince = 0; return; } // wait for the closed window
+  if (isRunning()) {
+    state.pendingSince = 0;
+    // Fresh post-update relaunch: restart once into the patched state so the
+    // user never has to quit manually. Older sessions wait for a natural exit.
+    if (changed && appUptimeMs() < FRESH_WINDOW_MS) {
+      state.busy = true;
+      log("fresh post-update launch detected; auto-restarting into patched state");
+      killApp();
+      if (waitClosed()) { await repair(); relaunch(); }
+      state.busy = false;
+      state.lastMtime = 0;
+      state.healthy = false;
+    }
+    return; // otherwise wait for the closed window
+  }
 
   const now = Date.now();
   if (!state.pendingSince) { state.pendingSince = now; return; }
@@ -127,7 +177,7 @@ async function resident() {
   log(`guardian started (poll=${POLL_MS}ms)`);
   const state = { lastMtime: 0, healthy: false, pendingSince: 0, busy: false };
   for (;;) {
-    await tick(state);
+    try { await tick(state); } catch (e) { log(`tick error (ignored): ${e && e.message}`); state.busy = false; }
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
 }
