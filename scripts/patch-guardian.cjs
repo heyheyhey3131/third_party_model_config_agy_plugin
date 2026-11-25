@@ -61,9 +61,11 @@ function log(msg) {
   } catch {}
 }
 
+const HIDDEN = { encoding: "utf8", windowsHide: true };
+
 function isRunning() {
   const r = spawnSync(path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tasklist.exe"),
-    ["/fo", "csv", "/nh"], { encoding: "utf8" });
+    ["/fo", "csv", "/nh"], HIDDEN);
   const out = (r.stdout || "").toLowerCase();
   return out.includes('"antigravity.exe"') || out.includes('"language_server.exe"');
 }
@@ -71,23 +73,29 @@ function isRunning() {
 // Milliseconds since the (first) Antigravity process started; Infinity if unknown.
 function appUptimeMs() {
   try {
-    const r = spawnSync("powershell.exe", ["-NoProfile", "-Command",
+    const r = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
       "(Get-Process Antigravity -ErrorAction SilentlyContinue | Select-Object -First 1).StartTime.ToString('o')"],
-      { encoding: "utf8" });
+      HIDDEN);
     const out = (r.stdout || "").trim();
     if (!out) return Infinity;
     return Date.now() - new Date(out).getTime();
   } catch { return Infinity; }
 }
 function killApp() {
-  spawnSync("taskkill.exe", ["/F", "/IM", "Antigravity.exe", "/T"], { stdio: "ignore" });
-  spawnSync("taskkill.exe", ["/F", "/IM", "language_server.exe", "/T"], { stdio: "ignore" });
+  spawnSync("taskkill.exe", ["/F", "/IM", "Antigravity.exe", "/T"], { stdio: "ignore", windowsHide: true });
+  spawnSync("taskkill.exe", ["/F", "/IM", "language_server.exe", "/T"], { stdio: "ignore", windowsHide: true });
+}
+function sleepSync(ms) {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { /* closed-window wait only */ }
+  }
 }
 function waitClosed(timeoutMs = 30000) {
   const start = Date.now();
-  while (isRunning() && Date.now() - start < timeoutMs) {
-    spawnSync(process.execPath, ["-e", "setTimeout(()=>{},500)"], { stdio: "ignore" });
-  }
+  while (isRunning() && Date.now() - start < timeoutMs) sleepSync(500);
   return !isRunning();
 }
 function relaunch() {
@@ -109,7 +117,10 @@ function readMarkers(asarPath) {
 
 function runInstaller(script, extraArgs) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, ...extraArgs], { stdio: "ignore" });
+    const child = spawn(process.execPath, [script, ...extraArgs], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
     child.on("exit", (code) => resolve(code == null ? 1 : code));
     child.on("error", () => resolve(1));
   });
@@ -182,19 +193,31 @@ async function resident() {
   }
 }
 
+function launcherVbsPath() {
+  return path.join(HERE, "launch-guardian.vbs");
+}
+function writeLauncherVbs() {
+  // wscript.exe is a GUI subsystem, so this never flashes a console.
+  const node = process.execPath.replace(/"/g, "");
+  const script = path.join(HERE, "patch-guardian.cjs");
+  const vbs =
+    "' Silent launcher: window style 0, no console.\r\n" +
+    "Set sh = CreateObject(\"Wscript.Shell\")\r\n" +
+    `sh.Run """${node}"" ""${script}""", 0, False\r\n`;
+  fs.writeFileSync(launcherVbsPath(), vbs, "utf8");
+}
 function installTask() {
-  // Per-user Run key (no elevation needed). Launches the guardian hidden at logon.
-  const node = process.execPath;
-  const guardian = path.join(HERE, "patch-guardian.cjs");
-  const data = `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& '${node}' '${guardian}'"`;
+  // Per-user Run key (no elevation). Starts via wscript so logon is silent.
+  writeLauncherVbs();
+  const data = `wscript.exe //B //Nologo "${launcherVbsPath()}"`;
   const r = spawnSync("reg.exe", ["add", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-    "/v", TASK_NAME, "/t", "REG_SZ", "/d", data, "/f"], { encoding: "utf8" });
+    "/v", TASK_NAME, "/t", "REG_SZ", "/d", data, "/f"], { encoding: "utf8", windowsHide: true });
   console.log(r.stdout || r.stderr);
   return r.status === 0;
 }
 function removeTask() {
   const r = spawnSync("reg.exe", ["delete", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-    "/v", TASK_NAME, "/f"], { encoding: "utf8" });
+    "/v", TASK_NAME, "/f"], { encoding: "utf8", windowsHide: true });
   console.log(r.stdout || r.stderr);
   return r.status === 0;
 }
